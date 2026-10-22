@@ -1,0 +1,575 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Адмін-панель КУІВП — аналіз і рішення</title>
+<meta name="description" content="Аналіз Excel-даних університету, порівняння з API МАУП та архітектура адмін-панелі з сумісним API.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231f4fd1'/%3E%3Cpath d='M8 10h16M8 16h16M8 22h10' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f6f5f1; --surface:#ffffff; --surface-2:#efede6; --ink:#1b1d22; --ink-2:#4a4f5a; --ink-3:#7c818c;
+  --line:#e2dfd6; --accent:#1f4fd1; --accent-soft:#e3eafc;
+  --ok:#1d7a4a; --ok-soft:#dff2e7; --mid:#a86a00; --mid-soft:#fbefd5;
+  --warn:#c2410c; --warn-soft:#fde5d8; --bad:#b42318; --bad-soft:#fbe0dd;
+  --plus:#6b3fc4; --plus-soft:#ece4fb;
+  --radius:14px; --shadow:0 1px 2px rgba(20,20,30,.05),0 6px 24px rgba(20,20,30,.05);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#121317; --surface:#1a1c22; --surface-2:#22252d; --ink:#eceef2; --ink-2:#b5bac4; --ink-3:#8a909c;
+    --line:#2e323b; --accent:#7ea0ff; --accent-soft:#1f2a47;
+    --ok:#5fd394; --ok-soft:#173527; --mid:#f2b84b; --mid-soft:#3a2d12;
+    --warn:#ff9a66; --warn-soft:#3d2216; --bad:#ff7b72; --bad-soft:#3d1a18;
+    --plus:#b79bff; --plus-soft:#2b2245; --shadow:none;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#121317; --surface:#1a1c22; --surface-2:#22252d; --ink:#eceef2; --ink-2:#b5bac4; --ink-3:#8a909c;
+  --line:#2e323b; --accent:#7ea0ff; --accent-soft:#1f2a47;
+  --ok:#5fd394; --ok-soft:#173527; --mid:#f2b84b; --mid-soft:#3a2d12;
+  --warn:#ff9a66; --warn-soft:#3d2216; --bad:#ff7b72; --bad-soft:#3d1a18;
+  --plus:#b79bff; --plus-soft:#2b2245; --shadow:none;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth; scroll-padding-top:72px}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 Manrope,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+a{color:var(--accent)}
+code,.mono{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:.86em}
+code{background:var(--surface-2);padding:.1em .4em;border-radius:6px}
+.wrap{max-width:1120px;margin:0 auto;padding:0 16px}
+
+/* nav */
+.nav{position:sticky;top:0;z-index:10;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.nav .wrap{display:flex;align-items:center;gap:20px;height:60px}
+.brand{font-weight:800;letter-spacing:-.01em;white-space:nowrap;text-decoration:none;color:var(--ink)}
+.brand span{color:var(--accent)}
+.nav ul{display:flex;gap:4px;list-style:none;margin:0;padding:0;overflow-x:auto;scrollbar-width:none;flex:1}
+.nav ul::-webkit-scrollbar{display:none}
+.nav a.l{display:block;padding:6px 10px;border-radius:8px;color:var(--ink-2);text-decoration:none;font-size:14px;font-weight:600;white-space:nowrap}
+.nav a.l:hover{background:var(--surface-2);color:var(--ink)}
+.theme{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:8px;width:36px;height:36px;cursor:pointer;flex:none}
+
+/* hero */
+.hero{padding:72px 0 40px}
+.eyebrow{font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+h1{font-size:clamp(32px,5vw,54px);line-height:1.08;letter-spacing:-.025em;margin:12px 0 18px;max-width:900px}
+.lead{font-size:clamp(17px,2vw,20px);color:var(--ink-2);max-width:760px;margin:0}
+.verdict{margin-top:36px;display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow)}
+.kpi b{display:block;font-size:30px;letter-spacing:-.02em;line-height:1.1}
+.kpi span{color:var(--ink-3);font-size:14px}
+
+section{padding:56px 0;border-top:1px solid var(--line)}
+h2{font-size:clamp(24px,3vw,34px);letter-spacing:-.02em;margin:0 0 8px;line-height:1.2}
+h3{font-size:18px;margin:0 0 6px}
+.sub{color:var(--ink-2);margin:0 0 28px;max-width:760px}
+.num{font-family:"JetBrains Mono",monospace;color:var(--ink-3);font-size:14px;font-weight:500;margin-right:8px}
+
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:22px;box-shadow:var(--shadow)}
+.card p{margin:.4em 0;color:var(--ink-2)}
+.card ul{margin:.6em 0 0;padding-left:18px;color:var(--ink-2)}
+.card li{margin:.25em 0}
+.file{font-family:"JetBrains Mono",monospace;font-size:13px;color:var(--ink-3);word-break:break-all}
+.stats{display:flex;gap:18px;flex-wrap:wrap;margin:14px 0 4px;padding:12px 0;border-top:1px dashed var(--line);border-bottom:1px dashed var(--line)}
+.stats div b{display:block;font-size:22px}
+.stats div span{font-size:13px;color:var(--ink-3)}
+
+/* tables */
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);box-shadow:var(--shadow)}
+table{border-collapse:collapse;width:100%;min-width:720px;font-size:14.5px}
+th,td{text-align:left;padding:12px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:12.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);background:var(--surface-2);font-weight:700;position:sticky;top:0}
+tr:last-child td{border-bottom:0}
+td .ep{font-family:"JetBrains Mono",monospace;font-size:13px;font-weight:500;color:var(--ink)}
+td small{display:block;color:var(--ink-3);font-size:13px;margin-top:2px}
+
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;padding:3px 10px;border-radius:99px;white-space:nowrap}
+.pill::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.p-ok{color:var(--ok);background:var(--ok-soft)}
+.p-mid{color:var(--mid);background:var(--mid-soft)}
+.p-warn{color:var(--warn);background:var(--warn-soft)}
+.p-bad{color:var(--bad);background:var(--bad-soft)}
+.p-plus{color:var(--plus);background:var(--plus-soft)}
+
+/* coverage bar */
+.cov{display:flex;height:14px;border-radius:99px;overflow:hidden;margin:18px 0 10px;background:var(--surface-2)}
+.cov div{height:100%}
+.legend{display:flex;flex-wrap:wrap;gap:8px 18px;font-size:14px;color:var(--ink-2);margin-bottom:24px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.filters button{border:1px solid var(--line);background:var(--surface);color:var(--ink-2);padding:7px 12px;border-radius:99px;font:600 13.5px Manrope,sans-serif;cursor:pointer}
+.filters button[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+
+/* issues */
+.issue{display:grid;grid-template-columns:auto 1fr;gap:14px;align-items:start}
+.sev{font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:4px 8px;border-radius:6px}
+
+/* diagram */
+.diagram{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:20px;box-shadow:var(--shadow);overflow-x:auto}
+.diagram svg{display:block;width:100%;min-width:760px;height:auto}
+.d-box{fill:var(--surface-2);stroke:var(--line);stroke-width:1.5}
+.d-acc{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.d-ok{fill:var(--ok-soft);stroke:var(--ok);stroke-width:1.5}
+.d-t{fill:var(--ink);font:700 15px Manrope,sans-serif}
+.d-s{fill:var(--ink-2);font:500 12.5px Manrope,sans-serif}
+.d-m{fill:var(--ink-3);font:500 11.5px "JetBrains Mono",monospace}
+.d-line{stroke:var(--ink-3);stroke-width:1.6;fill:none}
+
+/* mock panel */
+.mock{border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;background:var(--surface);box-shadow:var(--shadow)}
+.mock-top{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--surface-2)}
+.mock-top i{width:10px;height:10px;border-radius:50%;background:var(--line)}
+.mock-top span{margin-left:8px;font-size:13px;color:var(--ink-3)}
+.mock-body{display:grid;grid-template-columns:200px 1fr;min-height:420px}
+.side{border-right:1px solid var(--line);padding:14px 10px;display:flex;flex-direction:column;gap:2px}
+.side button{all:unset;cursor:pointer;padding:8px 12px;border-radius:8px;font-size:14px;font-weight:600;color:var(--ink-2)}
+.side button:hover{background:var(--surface-2)}
+.side button[aria-selected="true"]{background:var(--accent-soft);color:var(--accent)}
+.pane{padding:18px;min-width:0}
+.pane h4{margin:0 0 4px;font-size:17px}
+.pane .hint{color:var(--ink-3);font-size:13px;margin:0 0 14px}
+.pane .tbl-wrap{box-shadow:none}
+.pane table{min-width:560px;font-size:13.5px}
+.pane th,.pane td{padding:9px 12px}
+.minikpi{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+.minikpi div{border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.minikpi b{display:block;font-size:20px}
+.minikpi span{font-size:12px;color:var(--ink-3)}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.toolbar span{border:1px solid var(--line);border-radius:8px;padding:5px 10px;font-size:12.5px;color:var(--ink-2)}
+.toolbar .btn{background:var(--accent);color:#fff;border-color:var(--accent)}
+
+/* steps */
+.steps{counter-reset:s;display:grid;gap:12px}
+.step{display:grid;grid-template-columns:56px 1fr auto;gap:16px;align-items:start;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;box-shadow:var(--shadow)}
+.step .n{font:800 26px Manrope;color:var(--accent)}
+.step p{margin:4px 0 0;color:var(--ink-2)}
+.step .out{font-size:13px;color:var(--ink-3);text-align:right;max-width:220px}
+
+pre{background:var(--surface-2);border:1px solid var(--line);border-radius:12px;padding:16px;overflow-x:auto;font-size:13px;line-height:1.55;margin:0}
+.callout{border-left:4px solid var(--accent);background:var(--accent-soft);padding:16px 20px;border-radius:0 12px 12px 0;color:var(--ink)}
+.callout p{margin:.3em 0}
+footer{padding:40px 0 60px;color:var(--ink-3);font-size:14px;border-top:1px solid var(--line)}
+
+@media (max-width:900px){
+  .grid3,.verdict{grid-template-columns:repeat(2,1fr)}
+  .mock-body{grid-template-columns:1fr}
+  .side{flex-direction:row;overflow-x:auto;border-right:0;border-bottom:1px solid var(--line)}
+  .side button{white-space:nowrap}
+  .step{grid-template-columns:40px 1fr}
+  .step .out{grid-column:2;text-align:left}
+}
+@media (max-width:620px){
+  .grid3,.grid2,.verdict{grid-template-columns:1fr}
+  .minikpi{grid-template-columns:repeat(2,1fr)}
+  .hero{padding:44px 0 28px}
+  .brand small{display:none}
+}
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="wrap">
+    <a class="brand" href="#top">КУІВП<span>·</span>Адмін <small>— аналіз</small></a>
+    <ul>
+      <li><a class="l" href="#data">Дані</a></li>
+      <li><a class="l" href="#quality">Якість</a></li>
+      <li><a class="l" href="#api">API МАУП</a></li>
+      <li><a class="l" href="#solution">Рішення</a></li>
+      <li><a class="l" href="#panel">Панель</a></li>
+      <li><a class="l" href="#model">Модель</a></li>
+      <li><a class="l" href="#plan">План</a></li>
+    </ul>
+    <button class="theme" id="theme" aria-label="Перемкнути тему">◐</button>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="wrap">
+    <div class="eyebrow">Аналіз даних · жовтень 2026</div>
+    <h1>Адмін-панель університету на основі наявних Excel-файлів і API у форматі МАУП</h1>
+    <p class="lead">Зараз контингент, оплата, журнал і розклад ведуться в трьох окремих таблицях. Пропонуємо перенести їх в одну базу даних і зробити над нею адмін-панель із таблицями, архівом і звітами. Ця сама база віддаватиме API, сумісне з <code>api.maup.com.ua</code>, тож сервер, уже інтегрований з МАУП, підключиться без переробки.</p>
+    <div class="verdict">
+      <div class="kpi"><b>3</b><span>Excel-файли на вході</span></div>
+      <div class="kpi"><b>25</b><span>ендпоінтів в API МАУП</span></div>
+      <div class="kpi"><b>~70–80%</b><span>основних сутностей збігаються</span></div>
+      <div class="kpi"><b>88</b><span>груп у зведеному розкладі</span></div>
+    </div>
+  </div>
+</header>
+
+<main>
+<!-- DATA -->
+<section id="data">
+  <div class="wrap">
+    <h2><span class="num">01</span>Що є у вихідних файлах</h2>
+    <p class="sub">Структура трьох таблиць, які зараз ведуться вручну. Цифри отримані з самих файлів, персональні дані на цю сторінку не виносилися.</p>
+    <div class="grid3">
+      <article class="card">
+        <h3>Оплата і контингент</h3>
+        <div class="file">Оплата_навчання - контингент.xlsx</div>
+        <div class="stats">
+          <div><b>2</b><span>аркуші</span></div>
+          <div><b>35+</b><span>колонок</span></div>
+          <div><b>4</b><span>роки цін</span></div>
+        </div>
+        <ul>
+          <li>ПІБ, курс, група, форма (денна/заочна)</li>
+          <li>Контракт / бюджет / грант, статус, відрахування з номером наказу</li>
+          <li>ОКР, пільгова категорія, академічна мобільність</li>
+          <li>Дата народження, вік, стать</li>
+          <li>Вартість за 2025–2029 роки, терміни, суми й дати оплати за семестрами</li>
+          <li>Аркуш «звіти»: оплачено / не оплачено, гуртожиток</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>Журнал групи</h3>
+        <div class="file">ПД-5-25 БД - Журнал 1 семестр 2025-2026.xlsx</div>
+        <div class="stats">
+          <div><b>11</b><span>аркушів</span></div>
+          <div><b>36</b><span>студентів</span></div>
+          <div><b>27</b><span>навч. днів</span></div>
+        </div>
+        <ul>
+          <li>«Відвідування»: дні, дати, вид (л/с), № пари, присутність</li>
+          <li>10 аркушів, по одному на дисципліну</li>
+          <li>Викладач, теми, дати, вид заняття</li>
+          <li>Поточні оцінки, «н», «атестовано», есе, тести</li>
+          <li>Період: 14.09 – 21.10</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>Зведений розклад</h3>
+        <div class="file">Розклад.xlsx</div>
+        <div class="stats">
+          <div><b>493</b><span>колонки</span></div>
+          <div><b>88</b><span>груп</span></div>
+          <div><b>3 383</b><span>об'єднаних клітинок</span></div>
+        </div>
+        <ul>
+          <li>Аркуш «екзамени+заліки+заміни»</li>
+          <li>Курси 1–4, бакалаври ДФ, блоки по групах</li>
+          <li>День, дата, № пари, час</li>
+          <li>Викладач + дисципліна в одній клітинці</li>
+          <li>Аудиторії в заголовках курсів</li>
+        </ul>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- QUALITY -->
+<section id="quality">
+  <div class="wrap">
+    <h2><span class="num">02</span>Проблеми якості даних</h2>
+    <p class="sub">Через ці проблеми Excel не можна просто «підключити» до панелі. Під час імпорту дані треба нормалізувати.</p>
+    <div class="grid2">
+      <div class="card issue"><span class="sev p-bad">Критично</span><div><h3>Немає ідентифікаторів студентів</h3><p>У файлах є лише ПІБ. API МАУП шукає студента за <code>student_id</code>, <code>nsb</code> (номер залікової) або <code>ipn</code>. Без цього файли не зв'язати між собою, а однофамільців не розрізнити.</p></div></div>
+      <div class="card issue"><span class="sev p-bad">Критично</span><div><h3>Зламані формули у звітах</h3><p>На аркуші «звіти» замість відсотків стоїть <code>#DIV/0!</code>, а підсумки нульові. Звіти треба рахувати в системі, а не формулами в Excel.</p></div></div>
+      <div class="card issue"><span class="sev p-warn">Високо</span><div><h3>Оцінки перетворилися на дати</h3><p>Excel автоматично перетворив частину оцінок на дати (наприклад, <code>2026-05-04</code> замість «4/5»). Лише на одному аркуші журналу таких клітинок 5.</p></div></div>
+      <div class="card issue"><span class="sev p-warn">Високо</span><div><h3>Змішані формати оцінок</h3><p>Поруч стоять <code>5</code>, <code>н</code>, <code>н/3</code>, <code>есе-6</code>, <code>п-6</code>, «атестовано», «атест.». Потрібен довідник типів оцінок, як <code>/marktypes</code> у МАУП.</p></div></div>
+      <div class="card issue"><span class="sev p-mid">Середньо</span><div><h3>Кілька значень в одній клітинці</h3><p>У розкладі викладач і дисципліна записані разом («доц. … Історія…»), а групи перелічені через кому. У контингенті статус, дата й наказ теж в одному тексті.</p></div></div>
+      <div class="card issue"><span class="sev p-mid">Середньо</span><div><h3>Різне написання назв</h3><p>«Курилін» і «Курілін», «Лазарев» і «Лазарєв», «ЦГЮ - 7/24» і «ЦГЮ 7/24», зайві пробіли в назвах груп. Потрібні довідники викладачів, груп і дисциплін.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- API -->
+<section id="api">
+  <div class="wrap">
+    <h2><span class="num">03</span>Порівняння з API МАУП</h2>
+    <p class="sub">API МАУП (<code>api.maup.com.ua/api</code>) — це JSON-сервіс з Basic-авторизацією, 25 ендпоінтами і помилками у вигляді <code>500 + "E-xx текст"</code>. Нижче видно, як кожен ендпоінт покривається вашими даними.</p>
+
+    <div class="cov" role="img" aria-label="Покриття ендпоінтів: 16 повністю, 5 частково, 4 немає даних">
+      <div style="width:64%;background:var(--ok)"></div>
+      <div style="width:20%;background:var(--mid)"></div>
+      <div style="width:16%;background:var(--bad)"></div>
+    </div>
+    <div class="legend">
+      <span><i style="background:var(--ok)"></i>16 — є дані або легко зібрати</span>
+      <span><i style="background:var(--mid)"></i>5 — частково, потрібна обробка</span>
+      <span><i style="background:var(--bad)"></i>4 — даних немає</span>
+      <span><i style="background:var(--plus)"></i>+ ваші дані, яких немає в API</span>
+    </div>
+
+    <div class="filters" role="group" aria-label="Фільтр">
+      <button data-f="all" aria-pressed="true">Усі</button>
+      <button data-f="ok" aria-pressed="false">Збігається</button>
+      <button data-f="mid" aria-pressed="false">Частково</button>
+      <button data-f="bad" aria-pressed="false">Немає даних</button>
+      <button data-f="plus" aria-pressed="false">Лише у вас</button>
+    </div>
+
+    <div class="tbl-wrap">
+      <table id="apiTable">
+        <thead><tr><th style="width:22%">Ендпоінт МАУП</th><th style="width:30%">Що повертає</th><th style="width:30%">Що є у ваших файлах</th><th>Покриття</th></tr></thead>
+        <tbody>
+          <tr data-s="ok"><td><span class="ep">/studentinfo</span></td><td>ПІБ, група, курс, форма, рівень, стать, ціна, період оплати, телефон, дати навчання</td><td>Контингент: ПІБ, група, курс, форма, ОКР, стать, вартість за рік<small>Немає nsb, ІПН, телефону</small></td><td><span class="pill p-ok">Високе</span></td></tr>
+          <tr data-s="ok"><td><span class="ep">/schedule</span></td><td>Пари: день, дата, час, дисципліна, аудиторія, викладач, вид, сесія</td><td>Розклад: день, дата, № пари, час, викладач + дисципліна, аудиторії<small>Треба розібрати об'єднані клітинки</small></td><td><span class="pill p-ok">Високе</span></td></tr>
+          <tr data-s="ok"><td><span class="ep">/groups</span></td><td>Довідник груп: назва, форма, рівень, рік набору, курс, період навчання</td><td>88 назв груп у розкладі. Рік набору є в назві: «ПД 5/<b>25</b>»</td><td><span class="pill p-ok">Збираємо</span></td></tr>
+          <tr data-s="ok"><td><span class="ep">/institutes</span></td><td>Довідник інститутів</td><td>«інститут» / «коледж» на аркуші звітів</td><td><span class="pill p-ok">Збираємо</span></td></tr>
+          <tr data-s="ok"><td><span class="ep">/formlearn</span>, <span class="ep">/levellearn</span></td><td>Форми і рівні навчання</td><td>денна / заочна; бакалавр / магістр / коледж</td><td><span class="pill p-ok">Збираємо</span></td></tr>
+          <tr data-s="ok"><td><span class="ep">/paytype</span>, <span class="ep">/payperiod</span></td><td>Типи й періоди оплати</td><td>Контракт / бюджет / грант; оплата за семестр</td><td><span class="pill p-ok">Збираємо</span></td></tr>
+          <tr data-s="ok"><td><span class="ep">/scheduleprepod</span></td><td>Довідник викладачів</td><td>Прізвища з розкладу і журналу<small>Потрібна дедуплікація</small></td><td><span class="pill p-ok">Збираємо</span></td></tr>
+          <tr data-s="ok"><td><span class="ep">/scheduleauditorium</span></td><td>Довідник аудиторій</td><td>Номери аудиторій у заголовках розкладу</td><td><span class="pill p-ok">Збираємо</span></td></tr>
+          <tr data-s="ok"><td><span class="ep">/pairkind</span>, <span class="ep">/pairkinds</span></td><td>Види пар</td><td>«л» / «с» у журналі; екзамен / залік у розкладі</td><td><span class="pill p-ok">Збираємо</span></td></tr>
+          <tr data-s="ok"><td><span class="ep">/marktypes</span>, <span class="ep">/testtypes</span>, <span class="ep">/subjkinds</span></td><td>Типи оцінок, контролю, видів оцінок</td><td>Немає як довідника. Заповнюємо стандартними значеннями, як у МАУП</td><td><span class="pill p-ok">Статичні</span></td></tr>
+          <tr data-s="ok"><td><span class="ep">/orderoperation</span></td><td>Операції наказів</td><td>Зарахування, відрахування, поновлення, переведення (є в колонках)</td><td><span class="pill p-ok">Статичні</span></td></tr>
+          <tr data-s="mid"><td><span class="ep">/payments</span></td><td>Документи оплати: дата, операція, тип, сума</td><td>Одна сума і дата на семестр<small>Кожен семестр = один документ</small></td><td><span class="pill p-mid">Частково</span></td></tr>
+          <tr data-s="mid"><td><span class="ep">/saldo</span></td><td>Сальдо студента на поточну дату</td><td>Немає. Рахуємо: нараховано − оплачено</td><td><span class="pill p-mid">Обчислюємо</span></td></tr>
+          <tr data-s="mid"><td><span class="ep">/studentorders</span></td><td>Накази: номер, дата, операція, стара/нова група</td><td>Текст «відраховано (дата, наказ, п…)», «поновлення / переведення»</td><td><span class="pill p-mid">Парсинг тексту</span></td></tr>
+          <tr data-s="mid"><td><span class="ep">/discounts</span></td><td>Знижки: % , причина, період дії</td><td>Колонка «пільгова категорія», без відсотка</td><td><span class="pill p-mid">Частково</span></td></tr>
+          <tr data-s="mid"><td><span class="ep">/marks</span></td><td><b>Підсумкові</b> оцінки за семестр: залік/екзамен, ECTS, кредити</td><td>Журнал: <b>поточні</b> оцінки за темами<small>Підсумок обчислюємо або вносимо після сесії</small></td><td><span class="pill p-mid">Інший рівень</span></td></tr>
+          <tr data-s="bad"><td><span class="ep">/plan</span></td><td>Навчальний план: дисципліни, години, кредити, форма контролю</td><td>—</td><td><span class="pill p-bad">Немає</span></td></tr>
+          <tr data-s="bad"><td><span class="ep">/calgraph</span></td><td>Календарний графік: сесії, канікули, практика</td><td>— (частково видно з дат розкладу)</td><td><span class="pill p-bad">Немає</span></td></tr>
+          <tr data-s="bad"><td><span class="ep">/chairs</span>, <span class="ep">/chairsubjects</span></td><td>Кафедри та їхні дисципліни</td><td>—</td><td><span class="pill p-bad">Немає</span></td></tr>
+          <tr data-s="plus"><td><span class="ep">+ attendance</span></td><td>—</td><td>Відвідуваність по днях і парах (аркуш «Відвідування»)</td><td><span class="pill p-plus">Лише у вас</span></td></tr>
+          <tr data-s="plus"><td><span class="ep">+ dormitory</span></td><td>—</td><td>Гуртожиток: всього / оплачено / не оплачено</td><td><span class="pill p-plus">Лише у вас</span></td></tr>
+          <tr data-s="plus"><td><span class="ep">+ mobility</span></td><td>—</td><td>Академічна мобільність (вузи-партнери)</td><td><span class="pill p-plus">Лише у вас</span></td></tr>
+          <tr data-s="plus"><td><span class="ep">+ journal</span></td><td>—</td><td>Поточні оцінки за темами, теми занять</td><td><span class="pill p-plus">Лише у вас</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="color:var(--ink-3);font-size:14px;margin-top:10px">Згруповані ендпоінти-довідники в таблиці займають один рядок, але рахуються окремо: разом 25.</p>
+  </div>
+</section>
+
+<!-- SOLUTION -->
+<section id="solution">
+  <div class="wrap">
+    <h2><span class="num">04</span>Рішення: одна база і два виходи</h2>
+    <p class="sub">Excel-файли імпортуються в базу даних, структура якої повторює модель МАУП. Над базою працюють адмін-панель для співробітників і API у форматі МАУП для зовнішнього сервера.</p>
+
+    <div class="diagram">
+      <svg viewBox="0 0 1000 380" role="img" aria-label="Схема: Excel → імпорт → база даних → адмін-панель і API МАУП-формату → наявний сервер">
+        <defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--ink-3)"/></marker></defs>
+        <!-- excel -->
+        <rect class="d-box" x="10" y="40" width="190" height="64" rx="10"/><text class="d-t" x="26" y="68">Контингент + оплата</text><text class="d-m" x="26" y="88">.xlsx</text>
+        <rect class="d-box" x="10" y="158" width="190" height="64" rx="10"/><text class="d-t" x="26" y="186">Журнали груп</text><text class="d-m" x="26" y="206">.xlsx</text>
+        <rect class="d-box" x="10" y="276" width="190" height="64" rx="10"/><text class="d-t" x="26" y="304">Розклад</text><text class="d-m" x="26" y="324">.xlsx</text>
+        <!-- import -->
+        <rect class="d-box" x="260" y="130" width="170" height="120" rx="10"/>
+        <text class="d-t" x="276" y="160">Імпорт</text>
+        <text class="d-s" x="276" y="184">очищення оцінок</text>
+        <text class="d-s" x="276" y="203">розбір клітинок</text>
+        <text class="d-s" x="276" y="222">звірка ПІБ → nsb</text>
+        <path class="d-line" d="M200,72 C230,72 230,170 258,170" marker-end="url(#ar)"/>
+        <path class="d-line" d="M200,190 L258,190" marker-end="url(#ar)"/>
+        <path class="d-line" d="M200,308 C230,308 230,210 258,210" marker-end="url(#ar)"/>
+        <!-- db -->
+        <rect class="d-acc" x="490" y="110" width="200" height="160" rx="12"/>
+        <text class="d-t" x="508" y="140">База даних</text>
+        <text class="d-s" x="508" y="162">модель як у МАУП</text>
+        <text class="d-m" x="508" y="188">students · groups</text>
+        <text class="d-m" x="508" y="206">payments · orders</text>
+        <text class="d-m" x="508" y="224">schedule · marks</text>
+        <text class="d-m" x="508" y="242">attendance · archive</text>
+        <path class="d-line" d="M430,190 L488,190" marker-end="url(#ar)"/>
+        <!-- outputs -->
+        <rect class="d-box" x="750" y="40" width="230" height="110" rx="10"/>
+        <text class="d-t" x="768" y="70">Адмін-панель</text>
+        <text class="d-s" x="768" y="94">таблиці, фільтри, архів</text>
+        <text class="d-s" x="768" y="113">звіти → Excel / PDF</text>
+        <text class="d-s" x="768" y="132">ролі: деканат, бухгалтерія</text>
+        <rect class="d-ok" x="750" y="200" width="230" height="80" rx="10"/>
+        <text class="d-t" x="768" y="230">API у форматі МАУП</text>
+        <text class="d-m" x="768" y="252">/studentinfo /schedule</text>
+        <text class="d-m" x="768" y="268">/saldo /payments /marks…</text>
+        <path class="d-line" d="M690,160 C720,160 720,95 748,95" marker-end="url(#ar)"/>
+        <path class="d-line" d="M690,220 C720,220 720,240 748,240" marker-end="url(#ar)"/>
+        <!-- server -->
+        <rect class="d-box" x="750" y="310" width="230" height="56" rx="10" stroke-dasharray="5 4"/>
+        <text class="d-t" x="768" y="336">Наявний сервер</text>
+        <text class="d-s" x="768" y="354">змінюється лише URL і логін</text>
+        <path class="d-line" d="M865,280 L865,308" marker-end="url(#ar)"/>
+      </svg>
+    </div>
+
+    <div class="grid3" style="margin-top:16px">
+      <div class="card"><h3>Чому модель МАУП</h3><p>Структуру не треба вигадувати. Вона вже перевірена реальним сервером, і інтеграція вийде «з коробки».</p></div>
+      <div class="card"><h3>Чому API, а не обмін файлами</h3><p>Сервер отримує актуальні дані в реальному часі: сальдо, розклад, оцінки. Ручного вивантаження немає.</p></div>
+      <div class="card"><h3>Що понад МАУП</h3><p>Відвідуваність, поточний журнал, гуртожиток і мобільність віддаємо через додаткові ендпоінти. Наявний сервер просто ігноруватиме їх.</p></div>
+    </div>
+
+    <h3 style="margin:32px 0 10px">Приклад: відповідь <code>/studentinfo</code> з даних контингенту</h3>
+    <pre><code>POST /api/studentinfo     Authorization: Basic …
+{"student_id": null, "nsb": "КУ-000123", "full_name": null}
+
+200 OK
+[{
+  "student_id": 1042,
+  "last_name": "Прізвище", "first_name": "Ім'я", "middle_name": "По батькові",
+  "nsb": "КУ-000123",
+  "group": "СУД 8/24 БД", "group_id": 17, "course": 3,
+  "institute": "Інститут", "form_learn": "Денна", "level_learn": "Бакалавр",
+  "price": 37050, "price_pay_period": "Семестр", "price_pay_type": "Контракт",
+  "sex": "Ж", "education_start": "2024-09-01", "edication_end": "2028-06-30"
+}]</code></pre>
+    <p style="color:var(--ink-3);font-size:14px">Назви полів повторюють МАУП один в один, зокрема й їхню помилку в <code>edication_end</code>, щоб клієнт не довелося змінювати.</p>
+  </div>
+</section>
+
+<!-- PANEL -->
+<section id="panel">
+  <div class="wrap">
+    <h2><span class="num">05</span>Розділи адмін-панелі</h2>
+    <p class="sub">Інтерактивний макет. Перемикайте розділи ліворуч. Дані знеособлені й ілюстративні.</p>
+
+    <div class="mock">
+      <div class="mock-top"><i></i><i></i><i></i><span>admin.kuivp / <b id="crumb">Дашборд</b></span></div>
+      <div class="mock-body">
+        <div class="side" role="tablist">
+          <button role="tab" aria-selected="true" data-t="dash">📊 Дашборд</button>
+          <button role="tab" aria-selected="false" data-t="students">👥 Контингент</button>
+          <button role="tab" aria-selected="false" data-t="pay">💰 Оплата</button>
+          <button role="tab" aria-selected="false" data-t="journal">📘 Журнал</button>
+          <button role="tab" aria-selected="false" data-t="sched">🗓 Розклад</button>
+          <button role="tab" aria-selected="false" data-t="archive">🗄 Архів</button>
+          <button role="tab" aria-selected="false" data-t="reports">📑 Звіти</button>
+          <button role="tab" aria-selected="false" data-t="import">⬆️ Імпорт</button>
+        </div>
+        <div class="pane" id="pane"></div>
+      </div>
+    </div>
+
+    <div class="tbl-wrap" style="margin-top:20px">
+      <table>
+        <thead><tr><th>Розділ</th><th>Таблиці та функції</th><th>Джерело</th><th>Ролі</th></tr></thead>
+        <tbody>
+          <tr><td><b>Дашборд</b></td><td>Кількість студентів, % оплати, боржники, середній бал, відвідуваність за тиждень</td><td>усі</td><td>усі</td></tr>
+          <tr><td><b>Контингент</b></td><td>Фільтри: курс, група, форма, бюджет/контракт, статус. Картка студента з оплатою, оцінками та наказами</td><td>Оплата-контингент</td><td>деканат</td></tr>
+          <tr><td><b>Оплата</b></td><td>Нараховано / оплачено / борг за семестрами, прострочення, гуртожиток, знижки</td><td>Оплата-контингент</td><td>бухгалтерія</td></tr>
+          <tr><td><b>Журнал</b></td><td>Оцінки за дисциплінами й темами, відвідуваність, атестація</td><td>Журнали груп</td><td>деканат, викладачі</td></tr>
+          <tr><td><b>Розклад</b></td><td>Вигляд за групою, викладачем, аудиторією, днем; сесія, заміни</td><td>Розклад</td><td>усі</td></tr>
+          <tr><td><b>Архів</b></td><td>Минулі семестри й роки, відраховані, випускники, історія наказів</td><td>усі + накази</td><td>деканат</td></tr>
+          <tr><td><b>Звіти</b></td><td>Оплата, успішність, відвідуваність, боржники, контингент. Експорт у Excel / PDF</td><td>усі</td><td>адмін, керівництво</td></tr>
+          <tr><td><b>Імпорт</b></td><td>Завантаження нових .xlsx, попередній перегляд, лог помилок і невідповідностей</td><td>—</td><td>адмін</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- MODEL -->
+<section id="model">
+  <div class="wrap">
+    <h2><span class="num">06</span>Модель даних</h2>
+    <p class="sub">Основні таблиці бази. Поля в стовпці «МАУП» віддаються через API без змін, «розширення» потрібні лише панелі.</p>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Таблиця</th><th>Поля МАУП</th><th>Розширення</th><th>Звідки</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">students</td><td class="mono">student_id, nsb, ipn, last/first/middle_name, sex, phone_number, group_id, education_start, edication_end</td><td class="mono">birth_date, benefit, mobility, dormitory, status</td><td>Контингент</td></tr>
+          <tr><td class="mono">groups</td><td class="mono">group_id, group_name, institute_id, form_learn_id, level_learn_id, nabor_year, group_course, learn_from, learn_to</td><td>—</td><td>Розклад, контингент</td></tr>
+          <tr><td class="mono">prices</td><td class="mono">price, price_pay_period_id, price_pay_type_id</td><td class="mono">academic_year, due_date</td><td>Контингент (вартість за рік)</td></tr>
+          <tr><td class="mono">payments</td><td class="mono">date, operation_name, document_type, payment_value</td><td class="mono">semester</td><td>Контингент (оплата за семестр)</td></tr>
+          <tr><td class="mono">orders</td><td class="mono">number, date, operation_id, old/new_group_id, old/new_semester</td><td>—</td><td>Текст статусу</td></tr>
+          <tr><td class="mono">schedule</td><td class="mono">semestr, zes_schedule, day_date, pair_idx, from/to_time, pair_kind_id, subject_id, auditorium_id, prepod_id</td><td class="mono">group_ids[]</td><td>Розклад</td></tr>
+          <tr><td class="mono">marks</td><td class="mono">semestr, subject_id, testtype_id, marktype_id, mark, mark_classic, mark_ects, mark_date, prepod_name</td><td>—</td><td>Підсумок із журналу</td></tr>
+          <tr><td class="mono">journal_entries</td><td>—</td><td class="mono">student_id, subject_id, date, pair_idx, kind, topic, value, absent</td><td>Журнали груп</td></tr>
+          <tr><td class="mono">довідники</td><td class="mono">institutes, formlearn, levellearn, paytype, payperiod, prepod, auditorium, pairkinds, marktypes, testtypes, subjkinds, orderoperation, chairs</td><td>—</td><td>Збираються під час імпорту</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- PLAN -->
+<section id="plan">
+  <div class="wrap">
+    <h2><span class="num">07</span>План впровадження</h2>
+    <p class="sub">Етапи йдуть послідовно. Кожен дає результат, яким уже можна користуватися.</p>
+    <div class="steps">
+      <div class="step"><div class="n">1</div><div><h3>Ідентифікатори та довідники</h3><p>Отримати номери залікових (або ІПН) для студентів. Скласти довідники груп, викладачів, дисциплін, аудиторій.</p></div><div class="out">Результат: студенти однозначно зв'язуються між файлами</div></div>
+      <div class="step"><div class="n">2</div><div><h3>Імпорт і очищення</h3><p>Скрипти імпорту трьох файлів: відновлення оцінок-дат, розбір «викладач + дисципліна», парсинг наказів, лог невідповідностей для ручної перевірки.</p></div><div class="out">Результат: чиста база</div></div>
+      <div class="step"><div class="n">3</div><div><h3>API у форматі МАУП</h3><p>Спочатку ендпоінти, які реально використовує наявний сервер. Basic-авторизація, коди помилок <code>E-xx</code>. Перевірка на тому самому клієнті.</p></div><div class="out">Результат: сервер працює з вашими даними</div></div>
+      <div class="step"><div class="n">4</div><div><h3>Адмін-панель</h3><p>Контингент, оплата, розклад, журнал. Потім дашборд, звіти з експортом, архів.</p></div><div class="out">Результат: робота без Excel</div></div>
+      <div class="step"><div class="n">5</div><div><h3>Ролі та введення даних</h3><p>Вхід для деканату, бухгалтерії, викладачів. Внесення оцінок, оплат і наказів прямо в панелі, Excel лише для імпорту й експорту.</p></div><div class="out">Результат: єдине джерело правди</div></div>
+    </div>
+
+    <h3 style="margin:36px 0 12px">Що потрібно від університету</h3>
+    <div class="callout">
+      <p>✅ Номери залікових книжок або ІПН студентів (найважливіше).</p>
+      <p>✅ Список ендпоінтів і полів, які використовує наявний сервер, або доступ до його коду.</p>
+      <p>✅ Повні файли: контингент усіх груп і журнали всіх груп, а не лише ПД 5/25.</p>
+      <p>✅ Навчальні плани та календарний графік, якщо потрібні <code>/plan</code> і <code>/calgraph</code>.</p>
+      <p>✅ Хостинг для бази й API та перелік ролей користувачів.</p>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">Аналіз підготовлено на основі трьох Excel-файлів університету та публічної документації <a href="https://api.maup.com.ua/api" rel="noopener">api.maup.com.ua/api</a>. Персональних даних студентів на сторінці немає.</div>
+</footer>
+
+<script>
+// theme toggle
+(function(){
+  var root=document.documentElement, key='kuivp-theme';
+  try{var s=localStorage.getItem(key); if(s) root.setAttribute('data-theme',s);}catch(e){}
+  document.getElementById('theme').addEventListener('click',function(){
+    var cur=root.getAttribute('data-theme') || (matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');
+    var next=cur==='dark'?'light':'dark'; root.setAttribute('data-theme',next);
+    try{localStorage.setItem(key,next);}catch(e){}
+  });
+})();
+
+// API table filter
+document.querySelectorAll('.filters button').forEach(function(b){
+  b.addEventListener('click',function(){
+    document.querySelectorAll('.filters button').forEach(function(x){x.setAttribute('aria-pressed','false')});
+    b.setAttribute('aria-pressed','true');
+    var f=b.dataset.f;
+    document.querySelectorAll('#apiTable tbody tr').forEach(function(tr){
+      tr.style.display=(f==='all'||tr.dataset.s===f)?'':'none';
+    });
+  });
+});
+
+// mock panel
+var P={
+  dash:{t:'Дашборд',h:'Зведення на поточну дату',k:[['1 248','студентів'],['87%','оплата 1 сем.'],['64','боржники'],['91%','відвідуваність']],
+    cols:['Група','Студентів','Оплата','Сер. бал','Пропуски'],rows:[['ПД 5/25 БД','36','92%','4.4','6%'],['СУД 8/24 БД','28','78%','4.1','11%'],['ЦГЮ 7/24 БД','24','83%','4.3','8%'],['КБ 9/25 БД','30','95%','4.0','7%']]},
+  students:{t:'Контингент',h:'Фільтри: курс · група · форма · фінансування · статус',bar:['Курс: усі','Група: усі','Форма: денна','Статус: навчається','+ Додати'],
+    cols:['№ залікової','ПІБ','Група','Курс','Форма','Фінансування','Статус'],rows:[['КУ-000101','Студент А.','ПД 5/25 БД','2','денна','контракт','навчається'],['КУ-000102','Студент Б.','ПД 5/25 БД','2','денна','бюджет','навчається'],['КУ-000207','Студент В.','СУД 8/24 БД','3','денна','контракт','навчається'],['КУ-000311','Студент Г.','ЦГЮ 7/24 БД','3','заочна','контракт','відраховано']]},
+  pay:{t:'Оплата',h:'1 семестр 2026–2027 · термін до 01.07',bar:['Семестр: 1','Лише боржники','Гуртожиток','Експорт Excel'],
+    cols:['Студент','Група','Нараховано','Оплачено','Сальдо','Дата оплати','Стан'],rows:[['Студент А.','ПД 5/25 БД','18 525','18 525','0','20.06','<span class="pill p-ok">оплачено</span>'],['Студент В.','СУД 8/24 БД','18 525','9 000','−9 525','30.06','<span class="pill p-mid">частково</span>'],['Студент Д.','СУД 8/24 БД','18 525','0','−18 525','—','<span class="pill p-bad">борг</span>'],['Студент Е.','ЦГЮ 7/24 БД','16 672','16 672','0','21.06','<span class="pill p-plus">знижка 10%</span>']]},
+  journal:{t:'Журнал',h:'ПД 5/25 БД · Превентивна діяльність · викл. Б.',bar:['Група: ПД 5/25','Дисципліна','Вид: семінар','Період: вересень–жовтень'],
+    cols:['Студент','24.09','24.09','08.10','Атестація','22.10','Середній'],rows:[['Студент А.','4','4','4','атест.','3','3.8'],['Студент Б.','5','5','5','атест.','5','5.0'],['Студент Ж.','н/3','н/3','н/3','атест.','3','3.0'],['Студент З.','5','5','5','атест.','н','5.0']]},
+  sched:{t:'Розклад',h:'Вигляд: група · викладач · аудиторія',bar:['Група: ПД 5/25','Тиждень: 09.11–13.11','Сесія','Заміни'],
+    cols:['День','Пара','Час','Дисципліна','Викладач','Ауд.'],rows:[['Пн 09.11','1','9:00–10:20','Кримінальне право','доц. Ж.','206'],['Пн 09.11','2','10:30–11:50','Юридична психологія','викл. Х.','501'],['Вт 10.11','1','9:00–10:20','Публічне адміністрування','доц. Л.','207'],['Ср 11.11','3','12:20–13:40','Екзамен: Цивільне право','доц. К.','301']]},
+  archive:{t:'Архів',h:'Попередні семестри, відраховані, випускники',bar:['Рік: 2025–2026','Тип: усі накази'],
+    cols:['Дата','Наказ','Операція','Студент','Стара група','Нова група'],rows:[['01.09.2025','№ 112-с','Зарахування','Студент А.','—','ПД 5/25 БД'],['15.02.2026','№ 34-с','Переведення на заочну','Студент Е.','ЦГЮ 7/24 БД','ЦГЮ 7/24 ЗФ'],['10.03.2026','№ 51-с','Відрахування','Студент Г.','ЦГЮ 7/24 БД','—'],['01.09.2026','№ 140-с','Поновлення','Студент К.','—','СУД 8/24 БД']]},
+  reports:{t:'Звіти',h:'Готові звіти з експортом у Excel / PDF',
+    cols:['Звіт','Параметри','Формат'],rows:[['Оплата за семестр (інститут / коледж / гуртожиток)','дата, семестр, форма','Excel · PDF'],['Список боржників','група, сума від','Excel'],['Успішність групи','група, семестр','Excel · PDF'],['Відвідуваність','група, період','Excel'],['Контингент (стать, вік, форма, фінансування)','на дату','Excel · PDF']]},
+  import:{t:'Імпорт',h:'Завантаження .xlsx з перевіркою',bar:['Перетягніть файл сюди','Обрати файл'],
+    cols:['Файл','Рядків','Помилок','Стан'],rows:[['Оплата_навчання - контингент.xlsx','—','немає nsb','<span class="pill p-mid">потрібна звірка</span>'],['ПД-5-25 БД - Журнал.xlsx','36','5 оцінок-дат','<span class="pill p-mid">перевірити</span>'],['Розклад.xlsx','88 груп','3 383 об\'єднань','<span class="pill p-ok">розібрано</span>']]}
+};
+function render(id){
+  var d=P[id], h='<h4>'+d.t+'</h4><p class="hint">'+d.h+'</p>';
+  if(d.k) h+='<div class="minikpi">'+d.k.map(function(x){return '<div><b>'+x[0]+'</b><span>'+x[1]+'</span></div>'}).join('')+'</div>';
+  if(d.bar) h+='<div class="toolbar">'+d.bar.map(function(x,i){return '<span'+(i===d.bar.length-1&&/Додати|Експорт|Обрати/.test(x)?' class="btn"':'')+'>'+x+'</span>'}).join('')+'</div>';
+  h+='<div class="tbl-wrap"><table><thead><tr>'+d.cols.map(function(c){return '<th>'+c+'</th>'}).join('')+'</tr></thead><tbody>'+
+     d.rows.map(function(r){return '<tr>'+r.map(function(c){return '<td>'+c+'</td>'}).join('')+'</tr>'}).join('')+'</tbody></table></div>';
+  document.getElementById('pane').innerHTML=h;
+  document.getElementById('crumb').textContent=d.t;
+}
+document.querySelectorAll('.side button').forEach(function(b){
+  b.addEventListener('click',function(){
+    document.querySelectorAll('.side button').forEach(function(x){x.setAttribute('aria-selected','false')});
+    b.setAttribute('aria-selected','true'); render(b.dataset.t);
+  });
+});
+render('dash');
+</script>
+</body>
+</html>
